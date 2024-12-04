@@ -1,6 +1,6 @@
 module github.com/dlubom/proj2prompt
 
-go 1.23.3
+go 1.23
 
 require (
 	github.com/atotto/clipboard v0.1.4 // indirect
