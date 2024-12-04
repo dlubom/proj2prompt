@@ -84,11 +84,14 @@ func (e *Explorer) Explore() (string, error) {
 			return err
 		}
 
-		// Add the path to the result
-		builder.WriteString(relativePath)
-		builder.WriteString("\n")
+		// Add a descriptive message and separator before each path
+		if info.IsDir() {
+			builder.WriteString(fmt.Sprintf("\n#######\nDirectory: %s\n#######\n", relativePath))
+		} else {
+			builder.WriteString(fmt.Sprintf("\n-----\nFile: %s\n-----\n", relativePath))
+		}
 
-		// Include file content for text files
+		// Include file content for files
 		if !info.IsDir() {
 			content, err := e.readFileContent(path, info)
 			if err != nil {
@@ -114,24 +117,54 @@ func (e *Explorer) readFileContent(path string, info fs.FileInfo) (string, error
 		return "", nil
 	}
 
-	// Identify text files by extensions
-	textExtensions := []string{".txt", ".md", ".go", ".py", ".java", ".js", ".html", ".css"}
-	isTextFile := false
-	for _, ext := range textExtensions {
-		if strings.HasSuffix(info.Name(), ext) {
-			isTextFile = true
-			break
+	// Read up to 8000 bytes or the full file if smaller
+	maxSampleSize := 8000
+	sampleSize := int(info.Size())
+	if sampleSize > maxSampleSize {
+		sampleSize = maxSampleSize
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	buffer := make([]byte, sampleSize)
+	bytesRead, err := file.Read(buffer)
+	if err != nil {
+		return "", err
+	}
+
+	buffer = buffer[:bytesRead]
+
+	// Check if the file is binary
+	if isBinary(buffer) {
+		// Display the first 10 bytes in hex
+		hexBytes := ""
+		for i := 0; i < len(buffer) && i < 10; i++ {
+			hexBytes += fmt.Sprintf("%02x ", buffer[i])
+		}
+		return fmt.Sprintf("[Binary file: %s, Size: %d bytes, First 10 bytes: %s]", info.Name(), info.Size(), hexBytes), nil
+	} else {
+		// Treat as text file
+		return string(buffer), nil
+	}
+}
+
+// Helper function to determine if a file is binary
+func isBinary(data []byte) bool {
+	// Define a threshold for non-text bytes
+	// If more than 30% of the sample are non-text, consider it binary
+	nonTextThreshold := 0.3
+	nonTextCount := 0
+
+	for _, b := range data {
+		// Check for null bytes or non-printable characters
+		if (b == 0) || (b > 0 && b < 9) || (b > 13 && b < 32) || b == 127 {
+			nonTextCount++
 		}
 	}
 
-	if isTextFile {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return "", err
-		}
-		return string(data), nil
-	} else {
-		// Handle binary files
-		return fmt.Sprintf("[Binary file: %s, Size: %d bytes]", info.Name(), info.Size()), nil
-	}
+	return float64(nonTextCount)/float64(len(data)) > nonTextThreshold
 }
